@@ -32,21 +32,20 @@
 #include "interactive_markers/interactive_marker_client.h"
 #include "interactive_markers/detail/single_client.h"
 
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-
 //#define DBG_MSG( ... ) ROS_DEBUG_NAMED( "interactive_markers", __VA_ARGS__ );
-#define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
-//#define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
+//#define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
+#define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
 
 namespace interactive_markers
 {
 
 InteractiveMarkerClient::InteractiveMarkerClient(
-    tf::Transformer& tf,
+    rclcpp::Node::SharedPtr nh,
+    tf2::BufferCore& tf,
     const std::string& target_frame,
     const std::string &topic_ns )
-: state_("InteractiveMarkerClient",IDLE)
+: nh_(nh)
+, state_("InteractiveMarkerClient", IDLE, nh_->get_clock())
 , tf_(tf)
 , last_num_publishers_(0)
 , enable_autocomplete_transparency_(true)
@@ -56,7 +55,22 @@ InteractiveMarkerClient::InteractiveMarkerClient(
   {
     subscribe( topic_ns );
   }
-  callbacks_.setStatusCb( boost::bind( &InteractiveMarkerClient::statusCb, this, _1, _2, _3 ) );
+  callbacks_.setStatusCb( std::bind(
+    &InteractiveMarkerClient::statusCb, this, 
+    std::placeholders::_1, std::placeholders::_2, std::placeholders::_3 ) );
+}
+
+InteractiveMarkerClient::InteractiveMarkerClient(
+    tf2::BufferCore& tf,
+    const std::string& target_frame,
+    const std::string &topic_ns )
+: InteractiveMarkerClient(
+    std::make_shared<rclcpp::Node>("interactive_marker_client", ""),
+    tf,
+    target_frame,
+    topic_ns)
+{
+
 }
 
 InteractiveMarkerClient::~InteractiveMarkerClient()
@@ -120,9 +134,9 @@ void InteractiveMarkerClient::shutdown()
 
   case INIT:
   case RUNNING:
-    init_sub_.shutdown();
-    update_sub_.shutdown();
-    boost::lock_guard<boost::mutex> lock(publisher_contexts_mutex_);
+    init_sub_.reset();
+    update_sub_.reset();
+    std::lock_guard<std::mutex> lock(publisher_contexts_mutex_);
     publisher_contexts_.clear();
     last_num_publishers_=0;
     state_=IDLE;
@@ -136,10 +150,13 @@ void InteractiveMarkerClient::subscribeUpdate()
   {
     try
     {
-      update_sub_ = nh_.subscribe( topic_ns_+"/update", 100, &InteractiveMarkerClient::processUpdate, this );
+      update_sub_ = nh_->create_subscription<visualization_msgs::msg::InteractiveMarkerUpdate>(
+        topic_ns_+"/update", 
+        100,
+        std::bind(&InteractiveMarkerClient::processUpdate, this, std::placeholders::_1));
       DBG_MSG( "Subscribed to update topic: %s", (topic_ns_+"/update").c_str() );
     }
-    catch( ros::Exception& e )
+    catch( rclcpp::exceptions::RCLError &e )
     {
       callbacks_.statusCb( ERROR, "General", "Error subscribing: " + std::string(e.what()) );
       return;
@@ -154,11 +171,14 @@ void InteractiveMarkerClient::subscribeInit()
   {
     try
     {
-      init_sub_ = nh_.subscribe( topic_ns_+"/update_full", 100, &InteractiveMarkerClient::processInit, this );
+      init_sub_ = nh_->create_subscription<visualization_msgs::msg::InteractiveMarkerInit>(
+        topic_ns_+"/update_full",
+        rclcpp::QoS(100).transient_local(),
+        std::bind(&InteractiveMarkerClient::processInit, this, std::placeholders::_1));
       DBG_MSG( "Subscribed to init topic: %s", (topic_ns_+"/update_full").c_str() );
       state_ = INIT;
     }
-    catch( ros::Exception& e )
+    catch( rclcpp::exceptions::RCLError& e )
     {
       callbacks_.statusCb( ERROR, "General", "Error subscribing: " + std::string(e.what()) );
     }
@@ -179,7 +199,7 @@ void InteractiveMarkerClient::process( const MsgConstPtrT& msg )
 
   SingleClientPtr client;
   {
-    boost::lock_guard<boost::mutex> lock(publisher_contexts_mutex_);
+    std::lock_guard<std::mutex> lock(publisher_contexts_mutex_);
 
     M_SingleClient::iterator context_it = publisher_contexts_.find(msg->server_id);
 
@@ -190,7 +210,7 @@ void InteractiveMarkerClient::process( const MsgConstPtrT& msg )
     {
       DBG_MSG( "New publisher detected: %s", msg->server_id.c_str() );
 
-      SingleClientPtr pc(new SingleClient( msg->server_id, tf_, target_frame_, callbacks_ ));
+      SingleClientPtr pc(new SingleClient( msg->server_id, tf_, nh_->get_clock(), target_frame_, callbacks_ ));
       context_it = publisher_contexts_.insert( std::make_pair(msg->server_id,pc) ).first;
       client = pc;
 
@@ -205,12 +225,12 @@ void InteractiveMarkerClient::process( const MsgConstPtrT& msg )
   client->process( msg, enable_autocomplete_transparency_ );
 }
 
-void InteractiveMarkerClient::processInit( const InitConstPtr& msg )
+void InteractiveMarkerClient::processInit( InitConstPtr msg )
 {
   process<InitConstPtr>(msg);
 }
 
-void InteractiveMarkerClient::processUpdate( const UpdateConstPtr& msg )
+void InteractiveMarkerClient::processUpdate( UpdateConstPtr msg )
 {
   process<UpdateConstPtr>(msg);
 }
@@ -226,7 +246,7 @@ void InteractiveMarkerClient::update()
   case RUNNING:
   {
     // check if one publisher has gone offline
-    if ( update_sub_.getNumPublishers() < last_num_publishers_ )
+    if ( (int)update_sub_->get_publisher_count() < last_num_publishers_ )
     {
       callbacks_.statusCb( ERROR, "General", "Server is offline. Resetting." );
       shutdown();
@@ -234,11 +254,11 @@ void InteractiveMarkerClient::update()
       subscribeInit();
       return;
     }
-    last_num_publishers_ = update_sub_.getNumPublishers();
+    last_num_publishers_ = update_sub_->get_publisher_count();
 
     // check if all single clients are finished with the init channels
     bool initialized = true;
-    boost::lock_guard<boost::mutex> lock(publisher_contexts_mutex_);
+    std::lock_guard<std::mutex> lock(publisher_contexts_mutex_);
     M_SingleClient::iterator it;
     for ( it = publisher_contexts_.begin(); it!=publisher_contexts_.end(); ++it )
     {
@@ -258,7 +278,7 @@ void InteractiveMarkerClient::update()
     }
     if ( state_ == INIT && initialized )
     {
-      init_sub_.shutdown();
+      init_sub_.reset();
       state_ = RUNNING;
     }
     if ( state_ == RUNNING && !initialized )

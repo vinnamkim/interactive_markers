@@ -31,22 +31,20 @@
 
 #include "interactive_markers/detail/single_client.h"
 
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-
-#define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
-//#define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
+//#define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
+#define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
 
 namespace interactive_markers
 {
 
 SingleClient::SingleClient(
     const std::string& server_id,
-    tf::Transformer& tf,
+    tf2::BufferCore& tf,
+    rclcpp::Clock::SharedPtr clock,
     const std::string& target_frame,
     const InteractiveMarkerClient::CbCollection& callbacks
 )
-: state_(server_id,INIT)
+: state_(server_id, INIT, clock)
 , first_update_seq_num_(-1)
 , last_update_seq_num_(-1)
 , tf_(tf)
@@ -54,6 +52,7 @@ SingleClient::SingleClient(
 , callbacks_(callbacks)
 , server_id_(server_id)
 , warn_keepalive_(false)
+, clock_(clock)
 {
   callbacks_.statusCb( InteractiveMarkerClient::OK, server_id_, "Waiting for init message." );
 }
@@ -63,7 +62,7 @@ SingleClient::~SingleClient()
   callbacks_.resetCb( server_id_ );
 }
 
-void SingleClient::process(const visualization_msgs::InteractiveMarkerInit::ConstPtr& msg, bool enable_autocomplete_transparency)
+void SingleClient::process(const visualization_msgs::msg::InteractiveMarkerInit::ConstSharedPtr& msg, bool enable_autocomplete_transparency)
 {
   DBG_MSG( "%s: received init #%lu", server_id_.c_str(), msg->seq_num );
 
@@ -85,14 +84,14 @@ void SingleClient::process(const visualization_msgs::InteractiveMarkerInit::Cons
   }
 }
 
-void SingleClient::process(const visualization_msgs::InteractiveMarkerUpdate::ConstPtr& msg, bool enable_autocomplete_transparency)
+void SingleClient::process(const visualization_msgs::msg::InteractiveMarkerUpdate::ConstSharedPtr& msg, bool enable_autocomplete_transparency)
 {
   if ( first_update_seq_num_ == (uint64_t)-1 )
   {
     first_update_seq_num_ = msg->seq_num;
   }
-
-  last_update_time_ = ros::Time::now();
+  
+  last_update_time_ = clock_->now();
 
   if ( msg->type == msg->KEEP_ALIVE )
   {
@@ -161,7 +160,7 @@ void SingleClient::update()
     break;
 
   case TF_ERROR:
-    if ( state_.getDuration().toSec() > 1.0 )
+    if ( state_.getDuration().seconds() > 1.0 )
     {
       callbacks_.statusCb( InteractiveMarkerClient::ERROR, server_id_, "1 second has passed. Re-initializing." );
       state_ = INIT;
@@ -172,7 +171,7 @@ void SingleClient::update()
 
 void SingleClient::checkKeepAlive()
 {
-  double time_since_upd = (ros::Time::now() - last_update_time_).toSec();
+  double time_since_upd = (clock_->now() - last_update_time_).seconds();
   if ( time_since_upd > 2.0 )
   {
     std::ostringstream s;

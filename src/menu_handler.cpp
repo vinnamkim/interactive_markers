@@ -31,14 +31,12 @@
 
 #include "interactive_markers/menu_handler.h"
 
-#include <boost/bind.hpp>
-#include <boost/make_shared.hpp>
-
 namespace interactive_markers
 {
 
-MenuHandler::MenuHandler() :
-    current_handle_(1)
+MenuHandler::MenuHandler(rclcpp::Node::SharedPtr node) :
+    current_handle_(1),
+    node_(node)
 {
 
 }
@@ -46,7 +44,7 @@ MenuHandler::MenuHandler() :
 MenuHandler::EntryHandle MenuHandler::insert( const std::string &title,
     const FeedbackCallback &feedback_cb )
 {
-  EntryHandle handle = doInsert( title, visualization_msgs::MenuEntry::FEEDBACK, "", feedback_cb );
+  EntryHandle handle = doInsert( title, visualization_msgs::msg::MenuEntry::FEEDBACK, "", feedback_cb );
   top_level_handles_.push_back( handle );
   return handle;
 }
@@ -64,12 +62,15 @@ MenuHandler::EntryHandle MenuHandler::insert( const std::string &title,
 MenuHandler::EntryHandle MenuHandler::insert( EntryHandle parent, const std::string &title,
     const FeedbackCallback &feedback_cb )
 {
-  boost::unordered_map<EntryHandle, EntryContext>::iterator parent_context =
+  std::unordered_map<EntryHandle, EntryContext>::iterator parent_context =
       entry_contexts_.find( parent );
 
-  ROS_ASSERT_MSG ( parent_context != entry_contexts_.end(), "Parent menu entry %u not found.", parent );
+  RCLCPP_ERROR_EXPRESSION(
+    node_->get_logger(),
+    parent_context == entry_contexts_.end(), 
+    "Parent menu entry %u not found.", parent );
 
-  EntryHandle handle = doInsert( title, visualization_msgs::MenuEntry::FEEDBACK, "", feedback_cb );
+  EntryHandle handle = doInsert( title, visualization_msgs::msg::MenuEntry::FEEDBACK, "", feedback_cb );
   parent_context->second.sub_entries.push_back( handle );
   return handle;
 }
@@ -79,10 +80,13 @@ MenuHandler::EntryHandle MenuHandler::insert( EntryHandle parent, const std::str
                                               const uint8_t command_type,
                                               const std::string &command )
 {
-  boost::unordered_map<EntryHandle, EntryContext>::iterator parent_context =
+  std::unordered_map<EntryHandle, EntryContext>::iterator parent_context =
       entry_contexts_.find( parent );
 
-  ROS_ASSERT_MSG ( parent_context != entry_contexts_.end(), "Parent menu entry %u not found.", parent );
+  RCLCPP_ERROR_EXPRESSION(
+    node_->get_logger(),
+    parent_context != entry_contexts_.end(), 
+    "Parent menu entry %u not found.", parent );
 
   EntryHandle handle = doInsert( title, command_type, command, FeedbackCallback() );
   parent_context->second.sub_entries.push_back( handle );
@@ -92,7 +96,7 @@ MenuHandler::EntryHandle MenuHandler::insert( EntryHandle parent, const std::str
 
 bool MenuHandler::setVisible( EntryHandle handle, bool visible )
 {
-  boost::unordered_map<EntryHandle, EntryContext>::iterator context =
+  std::unordered_map<EntryHandle, EntryContext>::iterator context =
       entry_contexts_.find( handle );
 
   if ( context == entry_contexts_.end() )
@@ -107,7 +111,7 @@ bool MenuHandler::setVisible( EntryHandle handle, bool visible )
 
 bool MenuHandler::setCheckState( EntryHandle handle, CheckState check_state )
 {
-  boost::unordered_map<EntryHandle, EntryContext>::iterator context =
+  std::unordered_map<EntryHandle, EntryContext>::iterator context =
       entry_contexts_.find( handle );
 
   if ( context == entry_contexts_.end() )
@@ -122,7 +126,7 @@ bool MenuHandler::setCheckState( EntryHandle handle, CheckState check_state )
 
 bool MenuHandler::getCheckState( EntryHandle handle, CheckState &check_state ) const
 {
-  boost::unordered_map<EntryHandle, EntryContext>::const_iterator context =
+  std::unordered_map<EntryHandle, EntryContext>::const_iterator context =
       entry_contexts_.find( handle );
 
   if ( context == entry_contexts_.end() )
@@ -138,7 +142,7 @@ bool MenuHandler::getCheckState( EntryHandle handle, CheckState &check_state ) c
 
 bool MenuHandler::apply( InteractiveMarkerServer &server, const std::string &marker_name )
 {
-  visualization_msgs::InteractiveMarker int_marker;
+  visualization_msgs::msg::InteractiveMarker int_marker;
 
   if ( !server.get( marker_name, int_marker ) )
   {
@@ -152,24 +156,24 @@ bool MenuHandler::apply( InteractiveMarkerServer &server, const std::string &mar
   pushMenuEntries( top_level_handles_, int_marker.menu_entries, 0 );
 
   server.insert( int_marker );
-  server.setCallback( marker_name, boost::bind( &MenuHandler::processFeedback, this, _1 ), visualization_msgs::InteractiveMarkerFeedback::MENU_SELECT );
+  server.setCallback( marker_name, std::bind( &MenuHandler::processFeedback, this, std::placeholders::_1 ), visualization_msgs::msg::InteractiveMarkerFeedback::MENU_SELECT );
   managed_markers_.insert( marker_name );
   return true;
 }
 
 bool MenuHandler::pushMenuEntries( std::vector<EntryHandle>& handles_in,
-                                   std::vector<visualization_msgs::MenuEntry>& entries_out,
+                                   std::vector<visualization_msgs::msg::MenuEntry>& entries_out,
                                    EntryHandle parent_handle )
 {
   for ( unsigned t = 0; t < handles_in.size(); t++ )
   {
     EntryHandle handle = handles_in[t];
-    boost::unordered_map<EntryHandle, EntryContext>::iterator context_it =
+    std::unordered_map<EntryHandle, EntryContext>::iterator context_it =
         entry_contexts_.find( handle );
 
     if ( context_it == entry_contexts_.end() )
     {
-      ROS_ERROR( "Internal error: context handle not found! This is a bug in MenuHandler." );
+      RCLCPP_ERROR(node_->get_logger(), "Internal error: context handle not found! This is a bug in MenuHandler." );
       return false;
     }
 
@@ -225,9 +229,9 @@ MenuHandler::EntryHandle MenuHandler::doInsert( const std::string &title,
   return handle;
 }
 
-visualization_msgs::MenuEntry MenuHandler::makeEntry( EntryContext& context, EntryHandle handle, EntryHandle parent_handle )
+visualization_msgs::msg::MenuEntry MenuHandler::makeEntry( EntryContext& context, EntryHandle handle, EntryHandle parent_handle )
 {
-  visualization_msgs::MenuEntry menu_entry;
+  visualization_msgs::msg::MenuEntry menu_entry;
 
   switch ( context.check_state )
   {
@@ -251,9 +255,9 @@ visualization_msgs::MenuEntry MenuHandler::makeEntry( EntryContext& context, Ent
 }
 
 
-void MenuHandler::processFeedback( const visualization_msgs::InteractiveMarkerFeedbackConstPtr &feedback )
+void MenuHandler::processFeedback( FeedbackConstPtr feedback )
 {
-  boost::unordered_map<EntryHandle, EntryContext>::iterator context =
+  std::unordered_map<EntryHandle, EntryContext>::iterator context =
     entry_contexts_.find( (EntryHandle) feedback->menu_entry_id );
 
   if ( context != entry_contexts_.end() && context->second.feedback_cb )
@@ -264,7 +268,7 @@ void MenuHandler::processFeedback( const visualization_msgs::InteractiveMarkerFe
 
 bool MenuHandler::getTitle( EntryHandle handle, std::string &title ) const
 {
-  boost::unordered_map<EntryHandle, EntryContext>::const_iterator context =
+  std::unordered_map<EntryHandle, EntryContext>::const_iterator context =
       entry_contexts_.find( handle );
 
   if ( context == entry_contexts_.end() )
