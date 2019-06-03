@@ -18,6 +18,7 @@ find_package(std_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(orocos_kdl REQUIRED)
 
 include_directories(
   include
@@ -42,6 +43,7 @@ set(dependencies
   tf2
   tf2_ros
   visualization_msgs
+  orocos_kdl
 )
 ament_target_dependencies(${PROJECT_NAME}
   ${dependencies}
@@ -82,6 +84,28 @@ install(DIRECTORY include/
 #  target_link_libraries(missing_tf ${PROJECT_NAME})
 #  add_dependencies(tests missing_tf)
 #endif()
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest)
+
+  ament_add_gtest(server_test_unittest src/test/server_test.cpp)
+
+  if(TARGET server_test_unittest)
+    target_link_libraries(server_test_unittest ${PROJECT_NAME})
+  endif()
+
+  ament_add_gtest(client_test_unittest src/test/client_test.cpp)
+
+  if(TARGET client_test_unittest)
+    target_link_libraries(client_test_unittest ${PROJECT_NAME})
+  endif()
+
+  ament_add_gtest(server_client_test_unittest src/test/server_client_test.cpp)
+
+  if(TARGET server_client_test_unittest)
+    target_link_libraries(server_client_test_unittest ${PROJECT_NAME})
+  endif()
+endif()
 
 ament_export_include_directories(include)
 ament_export_libraries(${PROJECT_NAME})

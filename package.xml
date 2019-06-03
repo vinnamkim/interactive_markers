@@ -25,6 +25,8 @@
   <run_depend>tf2</run_depend>
   <run_depend>visualization_msgs</run_depend>
 
+  <test_depend>ament_cmake_gtest</test_depend>
+  
   <export>
 	  <build_type>ament_cmake</build_type>
   </export>

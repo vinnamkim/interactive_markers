@@ -27,13 +27,15 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <functional>
 
-#include <ros/ros.h>
-#include <ros/console.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <gtest/gtest.h>
 
-#include <tf/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+
+#include <tf2_ros/transform_listener.h>
 
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/interactive_marker_client.h>
@@ -64,7 +66,7 @@ struct Msg
 
   std::string server_id;
   std::string frame_id;
-  ros::Time stamp;
+  builtin_interfaces::msg::Time stamp;
 
   std::vector<std::string> expect_reset_calls;
   std::vector<int> expect_init_seq_num;
@@ -76,11 +78,11 @@ std::string target_frame = "target_frame";
 
 class SequenceTest
 {
-  typedef visualization_msgs::InteractiveMarkerInitConstPtr InitConstPtr;
-  typedef visualization_msgs::InteractiveMarkerUpdateConstPtr UpdateConstPtr;
+  typedef visualization_msgs::msg::InteractiveMarkerInit::ConstSharedPtr InitConstPtr;
+  typedef visualization_msgs::msg::InteractiveMarkerUpdate::ConstSharedPtr UpdateConstPtr;
 
-  std::vector<visualization_msgs::InteractiveMarkerInit> recv_init_msgs;
-  std::vector<visualization_msgs::InteractiveMarkerUpdate> recv_update_msgs;
+  std::vector<visualization_msgs::msg::InteractiveMarkerInit> recv_init_msgs;
+  std::vector<visualization_msgs::msg::InteractiveMarkerUpdate> recv_update_msgs;
   std::vector<std::string> recv_reset_calls;
 
   void resetReceivedMsgs()
@@ -120,26 +122,26 @@ class SequenceTest
 public:
   void test( std::vector<Msg> messages )
   {
-    tf::Transformer tf;
+    tf2::BufferCore tf;
 
     //tf.setTransform();
 
     // create an interactive marker server on the topic namespace simple_marker
 
-    visualization_msgs::InteractiveMarker int_marker;
+    visualization_msgs::msg::InteractiveMarker int_marker;
     int_marker.pose.orientation.w=1;
 
     std::string topic_ns ="im_client_test";
 
     interactive_markers::InteractiveMarkerClient client(tf, target_frame, topic_ns );
 
-    client.setInitCb( boost::bind(&SequenceTest::initCb, this, _1 ) );
-    client.setUpdateCb( boost::bind(&SequenceTest::updateCb, this, _1 ) );
-    client.setResetCb( boost::bind(&SequenceTest::resetCb, this, _1 ) );
-    client.setStatusCb( boost::bind(&SequenceTest::statusCb, this, _1, _2, _3 ) );
+    client.setInitCb( std::bind(&SequenceTest::initCb, this, std::placeholders::_1 ) );
+    client.setUpdateCb( std::bind(&SequenceTest::updateCb, this, std::placeholders::_1 ) );
+    client.setResetCb( std::bind(&SequenceTest::resetCb, this, std::placeholders::_1 ) );
+    client.setStatusCb( std::bind(&SequenceTest::statusCb, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3 ) );
 
-    std::map< int, visualization_msgs::InteractiveMarkerInit > sent_init_msgs;
-    std::map< int, visualization_msgs::InteractiveMarkerUpdate > sent_update_msgs;
+    std::map< int, visualization_msgs::msg::InteractiveMarkerInit > sent_init_msgs;
+    std::map< int, visualization_msgs::msg::InteractiveMarkerUpdate > sent_update_msgs;
 
     for ( size_t i=0; i<messages.size(); i++ )
     {
@@ -159,8 +161,8 @@ public:
       {
       case Msg::INIT:
       {
-        DBG_MSG_STREAM( i << " INIT: seq_num=" << msg.seq_num << " frame=" << msg.frame_id << " stamp=" << msg.stamp );
-        visualization_msgs::InteractiveMarkerInitPtr init_msg_out( new visualization_msgs::InteractiveMarkerInit() );
+        DBG_MSG_STREAM( i << " INIT: seq_num=" << msg.seq_num << " frame=" << msg.frame_id << " stamp=" << msg.stamp.sec );
+        visualization_msgs::msg::InteractiveMarkerInit::SharedPtr init_msg_out( new visualization_msgs::msg::InteractiveMarkerInit() );
         init_msg_out->server_id=msg.server_id;
         init_msg_out->seq_num=msg.seq_num;
         init_msg_out->markers.push_back( int_marker );
@@ -171,9 +173,9 @@ public:
       case Msg::KEEP_ALIVE:
       {
         DBG_MSG_STREAM( i << " KEEP_ALIVE: seq_num=" << msg.seq_num );
-        visualization_msgs::InteractiveMarkerUpdatePtr update_msg_out( new visualization_msgs::InteractiveMarkerUpdate() );
+        visualization_msgs::msg::InteractiveMarkerUpdate::SharedPtr update_msg_out( new visualization_msgs::msg::InteractiveMarkerUpdate() );
         update_msg_out->server_id=msg.server_id;
-        update_msg_out->type = visualization_msgs::InteractiveMarkerUpdate::KEEP_ALIVE;
+        update_msg_out->type = visualization_msgs::msg::InteractiveMarkerUpdate::KEEP_ALIVE;
         update_msg_out->seq_num=msg.seq_num;
 
         client.processUpdate( update_msg_out );
@@ -182,10 +184,10 @@ public:
       }
       case Msg::UPDATE:
       {
-        DBG_MSG_STREAM( i << " UPDATE: seq_num=" << msg.seq_num << " frame=" << msg.frame_id << " stamp=" << msg.stamp );
-        visualization_msgs::InteractiveMarkerUpdatePtr update_msg_out( new visualization_msgs::InteractiveMarkerUpdate() );
+        DBG_MSG_STREAM( i << " UPDATE: seq_num=" << msg.seq_num << " frame=" << msg.frame_id << " stamp=" << msg.stamp.sec );
+        visualization_msgs::msg::InteractiveMarkerUpdate::SharedPtr update_msg_out( new visualization_msgs::msg::InteractiveMarkerUpdate() );
         update_msg_out->server_id=msg.server_id;
-        update_msg_out->type = visualization_msgs::InteractiveMarkerUpdate::UPDATE;
+        update_msg_out->type = visualization_msgs::msg::InteractiveMarkerUpdate::UPDATE;
         update_msg_out->seq_num=msg.seq_num;
 
         update_msg_out->markers.push_back( int_marker );
@@ -195,13 +197,13 @@ public:
       }
       case Msg::POSE:
       {
-        DBG_MSG_STREAM( i << " POSE: seq_num=" << msg.seq_num << " frame=" << msg.frame_id << " stamp=" << msg.stamp );
-        visualization_msgs::InteractiveMarkerUpdatePtr update_msg_out( new visualization_msgs::InteractiveMarkerUpdate() );
+        DBG_MSG_STREAM( i << " POSE: seq_num=" << msg.seq_num << " frame=" << msg.frame_id << " stamp=" << msg.stamp.sec );
+        visualization_msgs::msg::InteractiveMarkerUpdate::SharedPtr update_msg_out( new visualization_msgs::msg::InteractiveMarkerUpdate() );
         update_msg_out->server_id=msg.server_id;
-        update_msg_out->type = visualization_msgs::InteractiveMarkerUpdate::UPDATE;
+        update_msg_out->type = visualization_msgs::msg::InteractiveMarkerUpdate::UPDATE;
         update_msg_out->seq_num=msg.seq_num;
 
-        visualization_msgs::InteractiveMarkerPose pose;
+        visualization_msgs::msg::InteractiveMarkerPose pose;
         pose.header=int_marker.header;
         pose.name=int_marker.name;
         pose.pose=int_marker.pose;
@@ -213,9 +215,9 @@ public:
       case Msg::DELETE:
       {
         DBG_MSG_STREAM( i << " DELETE: seq_num=" << msg.seq_num );
-        visualization_msgs::InteractiveMarkerUpdatePtr update_msg_out( new visualization_msgs::InteractiveMarkerUpdate() );
+        visualization_msgs::msg::InteractiveMarkerUpdate::SharedPtr update_msg_out( new visualization_msgs::msg::InteractiveMarkerUpdate() );
         update_msg_out->server_id="/im_client_test/test_server";
-        update_msg_out->type = visualization_msgs::InteractiveMarkerUpdate::UPDATE;
+        update_msg_out->type = visualization_msgs::msg::InteractiveMarkerUpdate::UPDATE;
         update_msg_out->seq_num=msg.seq_num;
 
         update_msg_out->erases.push_back( int_marker.name );
@@ -225,12 +227,14 @@ public:
       }
       case Msg::TF_INFO:
       {
-        DBG_MSG_STREAM( i << " TF_INFO: " << msg.frame_id << " -> " << target_frame << " at time " << msg.stamp.toSec() );
-        tf::StampedTransform stf;
-        stf.frame_id_=msg.frame_id;
-        stf.child_frame_id_=target_frame;
-        stf.stamp_=msg.stamp;
-        stf.setIdentity();
+        DBG_MSG_STREAM( i << " TF_INFO: " << msg.frame_id << " -> " << target_frame << " at time " << msg.stamp.sec );
+        geometry_msgs::msg::TransformStamped stf;
+        stf.header.frame_id=msg.frame_id;
+        stf.child_frame_id=target_frame;
+        stf.header.stamp=msg.stamp;
+        tf2::Transform t;
+        t.setIdentity();
+        stf.transform = tf2::toMsg(t);
         tf.setTransform( stf, msg.server_id );
         break;
       }
@@ -252,8 +256,8 @@ public:
       {
         ASSERT_TRUE( sent_update_msgs.find(msg.expect_update_seq_num[u]) != sent_update_msgs.end() );
 
-        visualization_msgs::InteractiveMarkerUpdate sent_msg = sent_update_msgs[msg.expect_update_seq_num[u]];
-        visualization_msgs::InteractiveMarkerUpdate recv_msg = recv_update_msgs[ u ];
+        visualization_msgs::msg::InteractiveMarkerUpdate sent_msg = sent_update_msgs[msg.expect_update_seq_num[u]];
+        visualization_msgs::msg::InteractiveMarkerUpdate recv_msg = recv_update_msgs[ u ];
 
         //sanity check
         ASSERT_EQ( sent_msg.seq_num, msg.expect_update_seq_num[u]  );
@@ -272,7 +276,7 @@ public:
         {
           ASSERT_EQ( recv_msg.markers[m].name, sent_msg.markers[m].name  );
           ASSERT_EQ( recv_msg.markers[m].header.stamp, sent_msg.markers[m].header.stamp  );
-          if ( sent_msg.markers[m].header.stamp == ros::Time(0) )
+          if ( sent_msg.markers[m].header.stamp == builtin_interfaces::msg::Time() )
           {
             ASSERT_EQ( target_frame, sent_msg.markers[m].header.frame_id  );
           }
@@ -285,7 +289,7 @@ public:
         {
           ASSERT_EQ( recv_msg.poses[p].name, sent_msg.poses[p].name  );
           ASSERT_EQ( recv_msg.poses[p].header.stamp, sent_msg.poses[p].header.stamp  );
-          if ( sent_msg.poses[p].header.stamp == ros::Time(0) )
+          if ( sent_msg.poses[p].header.stamp == builtin_interfaces::msg::Time() )
           {
             ASSERT_EQ( target_frame, sent_msg.poses[p].header.frame_id  );
           }
@@ -305,8 +309,8 @@ public:
       {
         ASSERT_TRUE( sent_init_msgs.find(msg.expect_init_seq_num[u]) != sent_init_msgs.end() );
 
-        visualization_msgs::InteractiveMarkerInit sent_msg = sent_init_msgs[msg.expect_init_seq_num[u]];
-        visualization_msgs::InteractiveMarkerInit recv_msg = recv_init_msgs[ u ];
+        visualization_msgs::msg::InteractiveMarkerInit sent_msg = sent_init_msgs[msg.expect_init_seq_num[u]];
+        visualization_msgs::msg::InteractiveMarkerInit recv_msg = recv_init_msgs[ u ];
 
         //sanity check
         ASSERT_EQ( sent_msg.seq_num, msg.expect_init_seq_num[u]  );
@@ -323,10 +327,10 @@ public:
         {
           ASSERT_EQ( recv_msg.markers[m].name, sent_msg.markers[m].name  );
           ASSERT_EQ( recv_msg.markers[m].header.stamp, sent_msg.markers[m].header.stamp  );
-          if ( sent_msg.markers[m].header.stamp == ros::Time(0) )
+          if ( sent_msg.markers[m].header.stamp == builtin_interfaces::msg::Time() )
           {
             // check if we can transform frame-locked messages
-            ASSERT_TRUE( tf.canTransform( target_frame, sent_msg.markers[m].header.frame_id, ros::Time(0) ) );
+            ASSERT_TRUE( tf.canTransform( target_frame, sent_msg.markers[m].header.frame_id, tf2_ros::fromMsg(builtin_interfaces::msg::Time()) ) );
           }
           else
           {
@@ -474,13 +478,13 @@ TEST(InteractiveMarkerClient, init_wait_tf)
   msg.type=Msg::TF_INFO;
   msg.server_id="server1";
   msg.frame_id="wait_frame";
-  msg.stamp=ros::Time(1.0);
+  msg.stamp=rclcpp::Time(1, 0);
   seq.push_back(msg);
 
   // send init message that lives in the future
   msg.type=Msg::INIT;
   msg.seq_num=0;
-  msg.stamp=ros::Time(2.0);
+  msg.stamp=rclcpp::Time(2, 0);
   seq.push_back(msg);
 
   msg.type=Msg::KEEP_ALIVE;
@@ -494,7 +498,7 @@ TEST(InteractiveMarkerClient, init_wait_tf)
   // send update message that lives in the future
   msg.type=Msg::UPDATE;
   msg.seq_num=1;
-  msg.stamp=ros::Time(3.0);
+  msg.stamp=rclcpp::Time(3, 0);
   msg.expect_init_seq_num.clear();
   seq.push_back(msg);
 
@@ -506,7 +510,7 @@ TEST(InteractiveMarkerClient, init_wait_tf)
   // send pose message that lives in the future
   msg.type=Msg::POSE;
   msg.seq_num=2;
-  msg.stamp=ros::Time(4.0);
+  msg.stamp=rclcpp::Time(4, 0);
   msg.expect_update_seq_num.clear();
   seq.push_back(msg);
 
@@ -531,7 +535,7 @@ TEST(InteractiveMarkerClient, init_wait_tf_zerotime)
   msg.server_id="server1";
   msg.frame_id="wait_frame";
   msg.seq_num=0;
-  msg.stamp=ros::Time(0.0);
+  msg.stamp=rclcpp::Time(0, 0);
   seq.push_back(msg);
 
   msg.type=Msg::KEEP_ALIVE;
@@ -539,7 +543,7 @@ TEST(InteractiveMarkerClient, init_wait_tf_zerotime)
 
   // send tf info -> message should get passed through
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(1.0);
+  msg.stamp=rclcpp::Time(1, 0);
   msg.expect_init_seq_num.push_back(0);
   seq.push_back(msg);
 
@@ -562,17 +566,17 @@ TEST(InteractiveMarkerClient, init_wait_tf_inverse)
   msg.type=Msg::TF_INFO;
   msg.server_id="server1";
   msg.frame_id="wait_frame";
-  msg.stamp=ros::Time(1.0);
+  msg.stamp=rclcpp::Time(1, 0);
   seq.push_back(msg);
 
   msg.type=Msg::INIT;
   msg.seq_num=0;
-  msg.stamp=ros::Time(6);
+  msg.stamp=rclcpp::Time(6, 0);
   seq.push_back(msg);
 
   msg.type=Msg::INIT;
   msg.seq_num=1;
-  msg.stamp=ros::Time(5);
+  msg.stamp=rclcpp::Time(5, 0);
   seq.push_back(msg);
 
   msg.type=Msg::KEEP_ALIVE;
@@ -581,34 +585,34 @@ TEST(InteractiveMarkerClient, init_wait_tf_inverse)
 
   msg.type=Msg::UPDATE;
   msg.seq_num=1;
-  msg.stamp=ros::Time(5);
+  msg.stamp=rclcpp::Time(5, 0);
   seq.push_back(msg);
 
   msg.type=Msg::UPDATE;
   msg.seq_num=2;
-  msg.stamp=ros::Time(4);
+  msg.stamp=rclcpp::Time(4, 0);
   seq.push_back(msg);
 
   msg.type=Msg::UPDATE;
   msg.seq_num=3;
-  msg.stamp=ros::Time(3);
+  msg.stamp=rclcpp::Time(3, 0);
   seq.push_back(msg);
 
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(2);
+  msg.stamp=rclcpp::Time(2, 0);
   seq.push_back(msg);
 
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(3);
+  msg.stamp=rclcpp::Time(3, 0);
   seq.push_back(msg);
 
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(4);
+  msg.stamp=rclcpp::Time(4, 0);
   seq.push_back(msg);
 
   // as soon as tf info for init #1 is there,
   // all messages should go through
-  msg.stamp=ros::Time(5);
+  msg.stamp=rclcpp::Time(5, 0);
   msg.expect_init_seq_num.push_back(1);
   msg.expect_update_seq_num.push_back(2);
   msg.expect_update_seq_num.push_back(3);
@@ -632,7 +636,7 @@ TEST(InteractiveMarkerClient, wait_tf_inverse)
   msg.type=Msg::TF_INFO;
   msg.server_id="server1";
   msg.frame_id="wait_frame";
-  msg.stamp=ros::Time(1);
+  msg.stamp=rclcpp::Time(1, 0);
   seq.push_back(msg);
 
   msg.type=Msg::INIT;
@@ -650,30 +654,30 @@ TEST(InteractiveMarkerClient, wait_tf_inverse)
 
   msg.type=Msg::UPDATE;
   msg.seq_num=1;
-  msg.stamp=ros::Time(5);
+  msg.stamp=rclcpp::Time(5, 0);
   seq.push_back(msg);
 
   msg.type=Msg::UPDATE;
   msg.seq_num=2;
-  msg.stamp=ros::Time(4);
+  msg.stamp=rclcpp::Time(4, 0);
   seq.push_back(msg);
 
   msg.type=Msg::UPDATE;
   msg.seq_num=3;
-  msg.stamp=ros::Time(3);
+  msg.stamp=rclcpp::Time(3, 0);
   seq.push_back(msg);
 
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(3);
+  msg.stamp=rclcpp::Time(3, 0);
   seq.push_back(msg);
 
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(4);
+  msg.stamp=rclcpp::Time(4, 0);
   seq.push_back(msg);
 
   // all messages should go through in the right order
   msg.type=Msg::TF_INFO;
-  msg.stamp=ros::Time(5);
+  msg.stamp=rclcpp::Time(5, 0);
   msg.expect_update_seq_num.push_back(1);
   msg.expect_update_seq_num.push_back(2);
   msg.expect_update_seq_num.push_back(3);
@@ -919,7 +923,7 @@ TEST(InteractiveMarkerClient, init_twoservers)
 int main(int argc, char **argv)
 {
   testing::InitGoogleTest(&argc, argv);
-  ros::init(argc, argv, "im_client_test");
+  rclcpp::init(argc, argv);
   //ros::NodeHandle nh;
   return RUN_ALL_TESTS();
 }

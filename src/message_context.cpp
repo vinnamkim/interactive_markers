@@ -79,11 +79,12 @@ bool MessageContext<MsgT>::getTransform( std_msgs::msg::Header& header, geometry
     if ( header.frame_id != target_frame_ )
     {
       // get transform
-      const auto transform =  tf_.lookupTransform( target_frame_, header.frame_id, tf2_ros::fromMsg(header.stamp));
+      auto time_point = tf2_ros::fromMsg(header.stamp);
+      const auto transform =  tf_.lookupTransform( target_frame_, header.frame_id, time_point);
       DBG_MSG( "Transform %s -> %s at time %f is ready.", header.frame_id.c_str(), target_frame_.c_str(), tf2_ros::timeToSec(header.stamp) );
 
       // if timestamp is given, transform message into target frame
-      if ( header.stamp != rclcpp::Time() )
+      if ( header.stamp != builtin_interfaces::msg::Time())
       {
         geometry_msgs::msg::PoseStamped pose_in, pose_out;
         pose_in.header = header;
@@ -107,11 +108,12 @@ bool MessageContext<MsgT>::getTransform( std_msgs::msg::Header& header, geometry
       tf_._validateFrameId("get_latest_common_time", header.frame_id),
       latest_time, &error_string );
 
-    rclcpp::Time rclcpp_latest_time = tf2_ros::toMsg(latest_time);
+    auto zero_time = tf2_ros::fromMsg(builtin_interfaces::msg::Time());
 
     // if we have some tf info and it is newer than the requested time,
     // we are very unlikely to ever receive the old tf info in the future.
-    if ( rclcpp_latest_time != rclcpp::Time() && rclcpp_latest_time > header.stamp )
+    if ( latest_time != zero_time && 
+      latest_time > tf2_ros::fromMsg(header.stamp) )
     {
       std::ostringstream s;
       s << "The init message contains an old timestamp and cannot be transformed ";

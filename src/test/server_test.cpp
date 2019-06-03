@@ -28,23 +28,25 @@
  */
 
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <gtest/gtest.h>
 
 #include <interactive_markers/interactive_marker_server.h>
 
+rclcpp::Node::SharedPtr node = nullptr;
+
 TEST(InteractiveMarkerServer, addRemove)
 {
   // create an interactive marker server on the topic namespace simple_marker
-  interactive_markers::InteractiveMarkerServer server("im_server_test");
+  interactive_markers::InteractiveMarkerServer server(node, "im_server_test");
 
   // create an interactive marker for our server
-  visualization_msgs::InteractiveMarker int_marker;
+  visualization_msgs::msg::InteractiveMarker int_marker;
   int_marker.name = "marker1";
 
   // create a valid pose
-  geometry_msgs::Pose pose;
+  geometry_msgs::msg::Pose pose;
   pose.orientation.w = 1.0;
 
   //insert, apply, erase, apply
@@ -102,7 +104,11 @@ TEST(InteractiveMarkerServer, addRemove)
 // Run all the tests that were declared with TEST()
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "im_server_test");
+  rclcpp::init(argc, argv);
   testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  node = std::make_shared<rclcpp::Node>("im_server_test");
+  auto result = RUN_ALL_TESTS();
+  node.reset();
+  rclcpp::shutdown();
+  return result;
 }

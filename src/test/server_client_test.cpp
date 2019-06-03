@@ -28,12 +28,11 @@
  */
 
 
-#include <ros/ros.h>
-#include <ros/console.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <gtest/gtest.h>
 
-#include <tf/transform_listener.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <interactive_markers/interactive_marker_server.h>
 #include <interactive_markers/interactive_marker_client.h>
@@ -51,8 +50,8 @@ int status_calls;
 
 std::string reset_server_id;
 
-typedef visualization_msgs::InteractiveMarkerInitConstPtr InitConstPtr;
-typedef visualization_msgs::InteractiveMarkerUpdateConstPtr UpdateConstPtr;
+typedef visualization_msgs::msg::InteractiveMarkerInit::ConstSharedPtr InitConstPtr;
+typedef visualization_msgs::msg::InteractiveMarkerUpdate::ConstSharedPtr UpdateConstPtr;
 
 InitConstPtr init_msg;
 UpdateConstPtr update_msg;
@@ -98,30 +97,34 @@ void resetCb( const std::string& server_id )
   reset_server_id = server_id;
 }
 
-void waitMsg()
+void waitMsg(rclcpp::Node::SharedPtr node)
 {
-  for(int i=0;i<10;i++)
+  for(int i = 0; i < 10; i++)
   {
-    ros::spinOnce();
+    rclcpp::spin_some(node);
     usleep(1000);
   }
 }
 
 TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 {
-  tf::TransformListener tf;
+  auto node = std::make_shared<rclcpp::Node>(
+    "im_server_client_test");
+
+  tf2::BufferCore buffer_core;
+  tf2_ros::TransformListener tf(buffer_core, node, false);
 
   // create an interactive marker server on the topic namespace simple_marker
-  interactive_markers::InteractiveMarkerServer server("im_server_client_test","test_server",false);
-  visualization_msgs::InteractiveMarker int_marker;
+  interactive_markers::InteractiveMarkerServer server(node, "im_server_client_test","test_server",false);
+  visualization_msgs::msg::InteractiveMarker int_marker;
   int_marker.name = "marker1";
   int_marker.header.frame_id = "valid_frame";
 
-  waitMsg();
+  waitMsg(node);
 
   resetReceivedMsgs();
 
-  interactive_markers::InteractiveMarkerClient client(tf, "valid_frame", "im_server_client_test");
+  interactive_markers::InteractiveMarkerClient client(node, buffer_core, "valid_frame", "im_server_client_test");
   client.setInitCb( &initCb );
   client.setStatusCb( &statusCb );
   client.setResetCb( &resetCb );
@@ -132,7 +135,8 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 
   server.insert(int_marker);
   server.applyChanges();
-  waitMsg();
+  usleep(1000 * 1000);
+  waitMsg(node);
   client.update();
 
   ASSERT_EQ( 0, update_calls  );
@@ -152,7 +156,8 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 
   server.insert(int_marker);
   server.applyChanges();
-  waitMsg();
+  usleep(1000 * 1000);
+  waitMsg(node);
   client.update();
 
   ASSERT_EQ( 1, update_calls  );
@@ -173,7 +178,8 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 
   server.insert(int_marker);
   server.applyChanges();
-  waitMsg();
+  usleep(1000 * 1000);
+  waitMsg(node);
   client.update();
 
   ASSERT_EQ( 0, update_calls  );
@@ -184,8 +190,8 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
   // Make marker tf info valid again -> connection should be successfully initialized again
   DBG_MSG("----------------------------------------");
 
-  usleep(2000000);
-  waitMsg();
+  usleep(1000 * 1000);
+  waitMsg(node);
   client.update();
 
   resetReceivedMsgs();
@@ -194,7 +200,8 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 
   server.insert(int_marker);
   server.applyChanges();
-  waitMsg();
+  usleep(1000 * 1000);
+  waitMsg(node);
   client.update();
 
   ASSERT_EQ( 0, update_calls  );
@@ -208,7 +215,8 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 
   server.erase("marker1");
   server.applyChanges();
-  waitMsg();
+  usleep(1000 * 1000);
+  waitMsg(node);
   client.update();
 
   ASSERT_EQ( 1, update_calls  );
@@ -227,7 +235,7 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
 
   server.setPose( "marker2", int_marker.pose, int_marker.header );
   server.applyChanges();
-  waitMsg();
+  waitMsg(node);
   client.update();
 
   ASSERT_EQ( 1, update_calls  );
@@ -238,13 +246,15 @@ TEST(InteractiveMarkerServerAndClient, connect_tf_error)
   ASSERT_EQ( 1, update_msg->poses.size()  );
   ASSERT_EQ( 0, update_msg->erases.size()  );
   ASSERT_EQ( "marker2", update_msg->poses[0].name  );
+  
+  node.reset();
 }
 
 
 // Run all the tests that were declared with TEST()
 int main(int argc, char **argv)
 {
-  ros::init(argc, argv, "im_server_client_test");
+  rclcpp::init(argc, argv);
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
