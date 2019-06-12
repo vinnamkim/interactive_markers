@@ -924,6 +924,6 @@ int main(int argc, char **argv)
 {
   testing::InitGoogleTest(&argc, argv);
   rclcpp::init(argc, argv);
-  //ros::NodeHandle nh;
+  //rclcpp::Node::SharedPtr nh;
   return RUN_ALL_TESTS();
 }

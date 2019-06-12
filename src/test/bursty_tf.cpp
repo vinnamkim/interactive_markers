@@ -28,7 +28,7 @@
  */
 
 
-#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 
 #include <tf/transform_broadcaster.h>
 #include <tf/tf.h>
@@ -167,7 +167,7 @@ void frameCallback(const ros::TimerEvent&)
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "bursty_tf");
-  ros::NodeHandle n;
+  rclcpp::Node::SharedPtr n;
 
   server.reset( new interactive_markers::InteractiveMarkerServer("bursty_tf","",false) );
 

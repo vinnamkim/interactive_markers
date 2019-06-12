@@ -32,7 +32,7 @@
 #include "interactive_markers/interactive_marker_client.h"
 #include "interactive_markers/detail/single_client.h"
 
-//#define DBG_MSG( ... ) ROS_DEBUG_NAMED( "interactive_markers", __VA_ARGS__ );
+//#define DBG_MSG( ... ) RCLCPP_DEBUG( "interactive_markers", __VA_ARGS__ );
 //#define DBG_MSG( ... ) ROS_DEBUG( __VA_ARGS__ );
 #define DBG_MSG( ... ) printf("   "); printf( __VA_ARGS__ ); printf("\n");
 
